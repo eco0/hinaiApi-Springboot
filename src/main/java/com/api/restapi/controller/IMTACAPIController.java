@@ -2,6 +2,10 @@ package com.api.restapi.controller;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -19,6 +23,8 @@ import org.hibernate.SQLQuery;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
+import org.hibernate.type.LongType;
+
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 
@@ -39,7 +45,7 @@ public class IMTACAPIController {
 	}
 	@SuppressWarnings({ "unchecked" })
 	@RequestMapping (value = "/Imtac/Notification", method = RequestMethod.GET,  produces = "application/json; charset=utf-8")
-	@ResponseBody String getSatuSehatData(HttpServletRequest request){
+	@ResponseBody String getIMTACData(HttpServletRequest request){
 		Gson gson = new GsonBuilder().create();
 		try {
 			String tanggalpulang = request.getParameter("tanggalpulang");
@@ -58,56 +64,68 @@ public class IMTACAPIController {
 			if(branchid.isEmpty()){
 				return buildErrorResponse(202, "parameter branchid must be filled.");
 			}
-			log.error("[INFO|PARAM] API Start . .");
 			String startdate = tanggalpulang+start_time;
 			String enddate = tanggalpulang+end_time;
+			log.error("[INFO] :::::::::START OPEN CONNECTION::::::::::");
 			Configuration cfg = new Configuration();
 			cfg.configure("hibernate.cfg.xml");
 			SessionFactory factory = cfg.buildSessionFactory();
 			Session session = factory.openSession();
+			log.error("[INFO] :::::::::API START::::::::::");
+			log.error("[INFO|tanggalpulang] :::::::::"+tanggalpulang+"::::::::::");
+			log.error("[INFO|start_time] :::::::::"+startdate+"::::::::::");
+			log.error("[INFO|end_time] :::::::::"+enddate+"::::::::::");
+			log.error("[INFO|branchid] :::::::::"+branchid+"::::::::::");
 			List<Map<String, Object>> listResponseHeader = new LinkedList<Map<String, Object>>();
-			SQLQuery<Object[]> branch = (SQLQuery<Object[]>) session.getNamedQuery("loadBranchDetailsForSatuSehat")
+			SQLQuery<Object[]> branch = (SQLQuery<Object[]>) session.getNamedQuery("loadBranchDetailsForIMTAC")
                     .setParameter("branchid", branchid);
 			List branchList = branch.list();
 			String branchId = branchList.get(0).toString();
 			if(branchId.isEmpty()){
 				return buildErrorResponse(202, "Branch details not found, Branch ID :" + branchid);
 			}
-			SQLQuery<Object[]> patientData = (SQLQuery<Object[]>) session.getNamedQuery("getPatientDischargeSatuSehat")
+			SQLQuery<Long> patientData = (SQLQuery<Long>) session.getNamedQuery("getImctacEncounterList")
 					.setParameter("startdate", startdate).setParameter("enddate", enddate).setParameter("branchid", branchId);
-			List <Object[]> patient = patientData.list();
-			for (Object[] ptb : patient) {
+			List <Long> patient = patientData.list();
+			for (Long encounterId : patient) {
 				try {
-				Map<String, Object> listResponse = new LinkedHashMap<String, Object>();
-				List<Map<String, String>> DataEncounter = new LinkedList<Map<String, String>>();
+//				Map<String, Object> listResponse = new LinkedHashMap<String, Object>();
+//				Map<String, Object> imtacResponse = new LinkedHashMap<String, Object>();
+//				List<Map<String, Object>> DataEncounter = new LinkedList<Map<String, Object>>();
 				/*Data Encounter*/
-			    SQLQuery<Object[]> EncounterData = (SQLQuery<Object[]>) session.getNamedQuery("getEncounterSatuSehat")
-						.setParameter("branchId", branchId).setParameter("patientId", ptb[1].toString()).setParameter("encounterId", ptb[0].toString());
+			    SQLQuery<Object[]> EncounterData = (SQLQuery<Object[]>) session.getNamedQuery("getEncounterIMTAC").setParameter("encounterId", encounterId.toString());
 				List <Object[]> Encounter = EncounterData.list();
 				for (Object[] m : Encounter) {
-					Map<String, String> dataEncounter = new LinkedHashMap<String, String>();
+			        LocalDateTime currentDateTime = LocalDateTime.now();
+			        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+			        String waktu = currentDateTime.format(formatter);
+					Map<String, Object> dataEncounter = new LinkedHashMap<String, Object>();
 					dataEncounter.put("kodebooking",!Objects.isNull(m[0]) ? m[0].toString() : "" );
-					dataEncounter.put("taskid",!Objects.isNull(m[13]) ? m[13].toString() : "" );
-					dataEncounter.put("waktu",!Objects.isNull(m[1]) ? m[1].toString() : "" );
-					DataEncounter.add(dataEncounter);
+					dataEncounter.put("taskid",!Objects.isNull(m[1]) ? m[1].toString() : "" );
+					dataEncounter.put("waktu", waktu);
+					listResponseHeader.add(dataEncounter);
 				}
 				/*End Encounter*/
-			listResponseHeader.add(listResponse);
 			} catch (Exception e) {
+				log.error("[ERROR] "+e.getMessage());
 		        continue; // Melanjutkan ke iterasi berikutnya
 		      }
 			}
 			Map<String, Object> response = new HashMap<>();
-			response.put("Response", listResponseHeader);
+			response.put("response", listResponseHeader);
 			Map<String, Object> metadata = new HashMap<>();
 			metadata.put("code", "200");
 			metadata.put("message", "SUCCESS");
-			response.put("Metadata", metadata);
+			response.put("metadata", metadata);
+			log.error("[INFO] :::::::::"+listResponseHeader+"::::::::::");
+			log.error("[INFO|API] :::::::::"+metadata+"::::::::::");
+			log.error("[INFO] :::::::::API END::::::::::");
 			return gson.toJson(response);
 		}catch(Exception e) {
 			StringWriter sw = new StringWriter();
 		    PrintWriter pw = new PrintWriter(sw);
 		    e.printStackTrace(pw);
+		    log.error("[ERROR] "+e.getMessage() + "\n" + sw.toString());
 //		    return buildErrorResponse(500, e.getMessage() + "\n" + sw.toString());
 			return buildErrorResponse(500, "error");
 		}
